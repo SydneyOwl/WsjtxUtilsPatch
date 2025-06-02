@@ -160,7 +160,7 @@ namespace WsjtxUtilsPatch.WsjtxUdpServer
             return Task.CompletedTask;
         }
 
-        public Task HandleRawMessageAsync(WsjtxUdpServer server, Memory<byte> message, EndPoint endPoint,
+        public virtual Task HandleRawMessageAsync(WsjtxUdpServer server, Memory<byte> message, EndPoint endPoint,
             CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;
