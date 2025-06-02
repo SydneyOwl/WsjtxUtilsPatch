@@ -1,0 +1,38 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net6.0;net8.0;net9.0;net48</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>True</GenerateDocumentationFile>
+    <VersionPrefix>1.0.0</VersionPrefix>
+    <Authors>KC3PIB</Authors>
+    <Copyright>KC3PIB</Copyright>
+    <Title>WsjtxUtils.WsjtxMessagesPatch</Title>
+    <Description>The WsjtxUtils.WsjtxMessages library contains the classes and methods needed to serialize and deserialize WSJT-X messages in the QT QDataStream format specified by WSJT-X.</Description>
+    <PackageProjectUrl>https://github.com/SydneyOwl/WsjtxUtilsPatch</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/SydneyOwl/WsjtxUtilsPatch</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>ham;amateur;radio;WSJT-X;FT8;FT4;WSPR;JT65</PackageTags>
+    <GeneratePackageOnBuild>False</GeneratePackageOnBuild>
+    <RootNamespace>WsjtxUtils.WsjtxMessages</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\LICENSE" Link="LICENSE" Pack="true" PackagePath="\">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup Condition=" '$(TargetFramework)' == 'net48' ">
+    <PackageReference Include="System.Memory" Version="4.6.3" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>
