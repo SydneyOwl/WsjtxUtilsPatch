@@ -314,7 +314,13 @@ namespace WsjtxUtilsPatch.WsjtxUdpServer
                         _ => null // no handler for unsupported messages
                     };
                     
-                    _ = _messageHandler.HandleRawMessageAsync(this,frame,result.RemoteEndPoint,cancellationToken);
+                    var rawMessageHandlingtask = _messageHandler.HandleRawMessageAsync(this,frame,result.RemoteEndPoint,cancellationToken);
+
+                    // add logging to raw handling tasks
+                    _ = rawMessageHandlingtask?.ContinueWith(
+                        t => _logger?.LogError(t.Exception, "Handler for {MessageType} threw an exception",
+                            message.MessageType),
+                        TaskContinuationOptions.OnlyOnFaulted);
 
                     // add logging to faulted tasks
                     _ = messageHandlingTask?.ContinueWith(
