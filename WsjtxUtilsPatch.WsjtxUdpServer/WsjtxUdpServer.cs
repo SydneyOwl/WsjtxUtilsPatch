@@ -12,7 +12,7 @@ using WsjtxUtilsPatch.WsjtxMessages.Messages;
 namespace WsjtxUtilsPatch.WsjtxUdpServer
 {
     /// <summary>
-    /// A UDP server for WSJT-X clients
+    /// A UDP server for WSJT-X clients using UdpClient
     /// </summary>
     public class WsjtxUdpServer : IDisposable
     {
@@ -27,9 +27,9 @@ namespace WsjtxUtilsPatch.WsjtxUdpServer
         private readonly int _datagramBufferSize;
 
         /// <summary>
-        /// The socket used for communications
+        /// The UdpClient used for communications
         /// </summary>
-        private readonly Socket _socket;
+        private readonly UdpClient _udpClient;
 
         /// <summary>
         /// The target handler for WSJT-X messages
@@ -77,9 +77,8 @@ namespace WsjtxUtilsPatch.WsjtxUdpServer
         /// <param name="port">UDP port to listen on. Defaults to 2237.</param>
         /// <param name="datagramBufferSize">Size of the reception buffer in bytes.</param>
         /// <param name="logger">Optional logger; if null, a no-op logger is used.</param>
-        /// <param name="dualMode"> whether to use IPv4/v6 or IPv4 only; Optional; on macOS must set to false: macOS does not support packet information for dual-mode sockets</param>
         public WsjtxUdpServer(IWsjtxUdpMessageHandler wsjtxUdpMessageHandler, IPAddress address, int port = 2237,
-            int datagramBufferSize = DefaultMtu, bool dualMode = true, ILogger<WsjtxUdpServer>? logger = null)
+            int datagramBufferSize = DefaultMtu, ILogger<WsjtxUdpServer>? logger = null)
         {
             // set the message handling object
             _messageHandler = wsjtxUdpMessageHandler;
@@ -93,33 +92,15 @@ namespace WsjtxUtilsPatch.WsjtxUdpServer
             IsMulticast = IsAddressMulticast(address);
             LocalEndpoint = IsMulticast ? new IPEndPoint(IPAddress.Any, port) : new IPEndPoint(address, port);
 
-            // setup UDP socket allowing for shared addresses
-            _socket = new Socket(SocketType.Dgram, ProtocolType.Udp)
-            {
-                ExclusiveAddressUse = false,
-                DualMode = dualMode
-            };
-            _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-            _socket.Bind(LocalEndpoint);
+            // setup UDP client allowing for shared addresses
+            _udpClient = new UdpClient();
+            _udpClient.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+            _udpClient.Client.Bind(LocalEndpoint);
 
             // if multicast join the group
             if (IsMulticast)
             {
-                if (address.AddressFamily == AddressFamily.InterNetwork)
-                {
-                    _socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.AddMembership,
-                        new MulticastOption(address, LocalEndpoint.Address));
-                }
-                else
-                {
-                    if (!dualMode)
-                    {
-                        _logger.LogWarning("cannot use ipv6 multicast when dualMode is disabled");
-                    }
-                    
-                    _socket.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.AddMembership,
-                        new IPv6MulticastOption(address));
-                }
+                _udpClient.JoinMulticastGroup(address);
             }
         }
 
@@ -190,7 +171,7 @@ namespace WsjtxUtilsPatch.WsjtxUdpServer
             try
             {
                 var bytesWritten = message.WriteMessageTo(datagramBuffer);
-                return _socket.SendTo(datagramBuffer, bytesWritten, SocketFlags.None, remoteEndpoint);
+                return _udpClient.Send(datagramBuffer, bytesWritten, (IPEndPoint)remoteEndpoint);
             }
             finally
             {
@@ -217,8 +198,7 @@ namespace WsjtxUtilsPatch.WsjtxUdpServer
             try
             {
                 var bytesWritten = message.WriteMessageTo(datagramBuffer);
-                return await _socket.SendToAsync(new ArraySegment<byte>(datagramBuffer, 0, bytesWritten),
-                    SocketFlags.None, remoteEndpoint);
+                return await _udpClient.SendAsync(datagramBuffer, bytesWritten, (IPEndPoint)remoteEndpoint);
             }
             finally
             {
@@ -255,7 +235,7 @@ namespace WsjtxUtilsPatch.WsjtxUdpServer
             {
                 // managed items
                 _cancellationTokenSource?.Dispose();
-                _socket.Dispose();
+                _udpClient?.Dispose();
             }
 
             IsDisposed = true;
@@ -268,23 +248,16 @@ namespace WsjtxUtilsPatch.WsjtxUdpServer
         /// <returns></returns>
         private async Task HandleDatagramLoopAsync(CancellationToken cancellationToken)
         {
-            var datagramBuffer = new byte[_datagramBufferSize];
-
             while (!cancellationToken.IsCancellationRequested)
             {
-                // wait for and read the next datagram into the buffer
+                // wait for and read the next datagram
                 try
                 {
-#if NETFRAMEWORK
-                    var result = await _socket.ReceiveFromAsync(new ArraySegment<byte>(datagramBuffer),
-                        SocketFlags.None, LocalEndpoint);
-#else
-                    var result =
-     await _socket.ReceiveFromAsync(datagramBuffer, SocketFlags.None, LocalEndpoint, cancellationToken);
-#endif
-
+                    // Receive from any client
+                    var result = await _udpClient.ReceiveAsync(cancellationToken);
+                    
                     // check that we actually read some data
-                    if (result.ReceivedBytes <= 0)
+                    if (result.Buffer.Length <= 0)
                     {
                         _logger?.LogWarning("No data was read from socket for endpoint {RemoteEndpoint}, skipping.",
                             result.RemoteEndPoint);
@@ -292,7 +265,7 @@ namespace WsjtxUtilsPatch.WsjtxUdpServer
                     }
 
                     // extract the framed packet based on the number of bytes that were read
-                    var frame = datagramBuffer.AsMemory(0, result.ReceivedBytes);
+                    var frame = result.Buffer.AsMemory();
                     var message = frame.DeserializeWsjtxMessage();
                     if (message is null)
                     {
@@ -325,7 +298,7 @@ namespace WsjtxUtilsPatch.WsjtxUdpServer
                         _ => null // no handler for unsupported messages
                     };
                     
-                    var rawMessageHandlingtask = _messageHandler.HandleRawMessageAsync(this,frame,result.RemoteEndPoint,cancellationToken);
+                    var rawMessageHandlingtask = _messageHandler.HandleRawMessageAsync(this, frame, result.RemoteEndPoint, cancellationToken);
 
                     // add logging to raw handling tasks
                     _ = rawMessageHandlingtask?.ContinueWith(

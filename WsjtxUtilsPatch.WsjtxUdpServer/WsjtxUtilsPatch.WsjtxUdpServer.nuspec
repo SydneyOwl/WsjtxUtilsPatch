@@ -18,7 +18,7 @@
   </metadata>
   <files>
     <file src="lib\**" target="lib/{framework name}[{version}]" />
-    <file src="..\..\LICENSE" target="\" />
+    <file src="..\LICENSE" target="\" />
     <file src="README.md" target="\" />
   </files>
 </package>
