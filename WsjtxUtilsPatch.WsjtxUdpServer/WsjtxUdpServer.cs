@@ -77,8 +77,9 @@ namespace WsjtxUtilsPatch.WsjtxUdpServer
         /// <param name="port">UDP port to listen on. Defaults to 2237.</param>
         /// <param name="datagramBufferSize">Size of the reception buffer in bytes.</param>
         /// <param name="logger">Optional logger; if null, a no-op logger is used.</param>
+        /// <param name="dualMode"> whether to use IPv4/v6 or IPv4 only; Optional; on macOS must set to false: macOS does not support packet information for dual-mode sockets</param>
         public WsjtxUdpServer(IWsjtxUdpMessageHandler wsjtxUdpMessageHandler, IPAddress address, int port = 2237,
-            int datagramBufferSize = DefaultMtu, ILogger<WsjtxUdpServer>? logger = null)
+            int datagramBufferSize = DefaultMtu, bool dualMode = true, ILogger<WsjtxUdpServer>? logger = null)
         {
             // set the message handling object
             _messageHandler = wsjtxUdpMessageHandler;
@@ -95,7 +96,8 @@ namespace WsjtxUtilsPatch.WsjtxUdpServer
             // setup UDP socket allowing for shared addresses
             _socket = new Socket(SocketType.Dgram, ProtocolType.Udp)
             {
-                ExclusiveAddressUse = false
+                ExclusiveAddressUse = false,
+                DualMode = dualMode
             };
             _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
             _socket.Bind(LocalEndpoint);
@@ -104,11 +106,20 @@ namespace WsjtxUtilsPatch.WsjtxUdpServer
             if (IsMulticast)
             {
                 if (address.AddressFamily == AddressFamily.InterNetwork)
+                {
                     _socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.AddMembership,
                         new MulticastOption(address, LocalEndpoint.Address));
+                }
                 else
+                {
+                    if (!dualMode)
+                    {
+                        _logger.LogWarning("cannot use ipv6 multicast when dualMode is disabled");
+                    }
+                    
                     _socket.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.AddMembership,
                         new IPv6MulticastOption(address));
+                }
             }
         }
 
