@@ -1,4 +1,6 @@
-﻿namespace WsjtxUtilsPatch.WsjtxMessages.Messages
+﻿using System;
+
+namespace WsjtxUtilsPatch.WsjtxMessages.Messages
 {
     /// <summary>
     /// WSJT-X Decode message
@@ -68,23 +70,34 @@
         /// <summary>
         /// Convert the mode notation into a more friendly mode string
         /// </summary>
-        /// <remarks>https://physics.princeton.edu/pulsar/k1jt/wsjtx-doc/wsjtx-main-2.5.4.html#_decoded_lines</remarks>
+        /// <remarks>
+        /// https://physics.princeton.edu/pulsar/k1jt/wsjtx-doc/wsjtx-main-2.5.4.html#_decoded_lines
+        /// WSJT-X and JTDX reuse the same single-character notations with different meanings:
+        /// JTDX emits ':' for FT4 and '+' for T10, while WSJT-X emits ':' for Q65 and '+' for FT4.
+        /// The message id tells the sources apart.
+        /// </remarks>
         /// <returns></returns>
         public string DecodeModeNotationsToString()
         {
             return Mode switch
             {
                 "`" => "FST4",
-                "+" => "FT4",
+                "+" => IsJtdxSource ? "T10" : "FT4",
                 "~" => "FT8",
                 "$" => "JT4",
                 "@" => "JT9",
                 "#" => "JT65",
-                ":" => "Q65",
+                ":" => IsJtdxSource ? "FT4" : "Q65",
                 "&" => "MSK144",
                 _ => string.Empty
             };
         }
+
+        /// <summary>
+        /// JTDX always uses "JTDX" as message id, optionally suffixed with " - &lt;rig-name&gt;"
+        /// or " - test" for multi-instance setups; the id cannot be replaced.
+        /// </summary>
+        private bool IsJtdxSource => Id == "JTDX" || (Id?.StartsWith("JTDX - ", StringComparison.Ordinal) ?? false);
 
         #region IWsjtxDirectionOut
         /// <summary>
