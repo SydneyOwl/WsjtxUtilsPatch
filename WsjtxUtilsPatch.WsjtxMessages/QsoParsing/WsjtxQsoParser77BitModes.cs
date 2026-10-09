@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using WsjtxUtilsPatch.WsjtxMessages.Messages;
 
@@ -11,6 +11,7 @@ namespace WsjtxUtilsPatch.WsjtxMessages.QsoParsing
     {
         private readonly Decode _decodeMessage;
         private readonly string[] _parts;
+        private readonly bool _usedPriori;
         private int _deCallSignIndex;
         private int _dxCallSignIndex;
 
@@ -21,7 +22,7 @@ namespace WsjtxUtilsPatch.WsjtxMessages.QsoParsing
         public WsjtxQsoParser77BitModes(Decode decodeMessage)
         {
             _decodeMessage = decodeMessage;
-            _parts = NormalizedSplit(_decodeMessage.Message);
+            _parts = NormalizedSplit(_decodeMessage.Message, out _usedPriori);
         }
 
         /// <summary>
@@ -42,8 +43,8 @@ namespace WsjtxUtilsPatch.WsjtxMessages.QsoParsing
                 return result;
             }
 
-            // check if the message used priori data and setup indexes
-            result.UsedPriori = PrioriRegex.Match(_parts.Last()).Success;
+            // was priori data used to complete the decode (flag stripped above) and setup indexes
+            result.UsedPriori = _usedPriori;
             _deCallSignIndex = 1;
             _dxCallSignIndex = 0;
 
@@ -54,14 +55,12 @@ namespace WsjtxUtilsPatch.WsjtxMessages.QsoParsing
             }
             else
             {
-                // it is not a CQ, so calculate the number of parts and process accordingly
-                var numOfParts = CalculateNumberOfParts(result);
-
-                if (numOfParts == 2)
+                // it is not a CQ, so process according to the number of parts
+                if (length == 2)
                     ParseTwoParts(result);
-                else if (numOfParts == 3)
+                else if (length == 3)
                     ParseThreeParts(result);
-                else if (numOfParts > 3)
+                else
                     ParseFourOrMoreParts(result);
             }
 
@@ -72,36 +71,6 @@ namespace WsjtxUtilsPatch.WsjtxMessages.QsoParsing
 
         #region Private Methods
         /// <summary>
-        /// Calculate the number of parts corrected for priori
-        /// </summary>
-        /// <param name="qso"></param>
-        /// <returns></returns>
-        private int CalculateNumberOfParts(WsjtxQso qso)
-        {
-            return _parts.Length - (qso.UsedPriori ? 1 : 0);
-        }
-
-        /// <summary>
-        /// The index to the last part of the message corrected for priori
-        /// </summary>
-        /// <param name="qso"></param>
-        /// <returns></returns>
-        private int LastPartIndex(WsjtxQso qso)
-        {
-            return _parts.Length - (qso.UsedPriori ? 2 : 1);
-        }
-
-        /// <summary>
-        /// The last part of the message corrected for priori
-        /// </summary>
-        /// <param name="qso"></param>
-        /// <returns></returns>
-        private string LastPart(WsjtxQso qso)
-        {
-            return _parts[LastPartIndex(qso)];
-        }
-
-        /// <summary>
         /// Parse a CQ message
         /// </summary>
         /// <param name="qso"></param>
@@ -109,17 +78,16 @@ namespace WsjtxUtilsPatch.WsjtxMessages.QsoParsing
         {
             _dxCallSignIndex = -1;
             qso.QsoState = WsjtxQsoState.CallingCq;
-            var lastPartIndex = LastPartIndex(qso);
 
             // Does the CQ call have a modifer (DX, POTA, TEST, etc.)
-            if (lastPartIndex == 3)
+            if (_parts.Length == 4)
             {
                 qso.CallingModifier = _parts[1];
                 _deCallSignIndex++;
             }
 
             // Find the gridsquare if provided
-            if (_deCallSignIndex + (qso.UsedPriori ? 2 : 1) < _parts.Length && TryGetGridsquare(_parts[_deCallSignIndex + 1], out string gridSquare))
+            if (_deCallSignIndex + 1 < _parts.Length && TryGetGridsquare(_parts[_deCallSignIndex + 1], out string gridSquare))
             {
                 qso.GridSquare = gridSquare;
             }
@@ -151,8 +119,8 @@ namespace WsjtxUtilsPatch.WsjtxMessages.QsoParsing
         /// <param name="qso"></param>
         private void ParseThreeParts(WsjtxQso qso)
         {
-            var lastPart = LastPart(qso);
-            qso.Report = string.Join(" ", _parts.Skip(2));
+            var lastPart = _parts[_parts.Length - 1];
+            qso.Report = lastPart;
 
             if (lastPart == "RRR" || lastPart == "RR73")
             {
@@ -187,7 +155,7 @@ namespace WsjtxUtilsPatch.WsjtxMessages.QsoParsing
         /// <param name="qso"></param>
         private void ParseFourOrMoreParts(WsjtxQso qso)
         {
-            var lastPartIndex = LastPartIndex(qso);
+            var lastPartIndex = _parts.Length - 1;
             var lastPart = _parts[lastPartIndex];
             var lastPartPrefix = _parts[lastPartIndex - 1];
 
@@ -232,8 +200,9 @@ namespace WsjtxUtilsPatch.WsjtxMessages.QsoParsing
         /// Cleans an FT mode message split into relevant parts
         /// </summary>
         /// <param name="message"></param>
+        /// <param name="usedPriori"></param>
         /// <returns></returns>
-        private static string[] NormalizedSplit(string message)
+        private static string[] NormalizedSplit(string message, out bool usedPriori)
         {
             // remove semicolons
             var semicolonIndex = message.IndexOf(';');
@@ -241,12 +210,15 @@ namespace WsjtxUtilsPatch.WsjtxMessages.QsoParsing
                 message = message.Substring(semicolonIndex + 1);
 
             // remove lt, gt, and split on spaces
-            return message
+            var parts = message
                 .Replace("<", "")
                 .Replace(">", "")
                 .Split(new[] { ' ' }, options:StringSplitOptions.RemoveEmptyEntries)
                 .Where(part => part != "?")
                 .ToArray();
+
+            // strip trailing decoder flags (e.g. "a3" AP flags)
+            return StripTrailingDecoderFlags(parts, out usedPriori);
         }
 
         /// <summary>

@@ -71,10 +71,24 @@ namespace WsjtxUtilsPatch.WsjtxMessages.Messages
         /// Convert the mode notation into a more friendly mode string
         /// </summary>
         /// <remarks>
+        /// <para>
+        /// Notations follow Table 5 of the WSJT-X user guide:
         /// https://physics.princeton.edu/pulsar/k1jt/wsjtx-doc/wsjtx-main-2.5.4.html#_decoded_lines
+        /// </para>
+        /// <para>
+        /// WSJT-X: "~" FT8, "+" FT4, "`" FST4, ":" Q65, "@" JT9, "#" JT65,
+        /// "#*" JT65 (VHF deep sync), "##" JT65 (VHF, message text ends with "OOO"),
+        /// "$*" and "$#" JT4 (sync polarity, a bare "$" is never emitted by the decoder),
+        /// "&amp;" MSK144, "^" MSK144 (long averaging).
+        /// </para>
+        /// <para>
+        /// WSJT-X Improved 3.1.0 adds "*" FT2 (an FT4-style 77-bit payload).
+        /// </para>
+        /// <para>
         /// WSJT-X and JTDX reuse the same single-character notations with different meanings:
         /// JTDX emits ':' for FT4 and '+' for T10, while WSJT-X emits ':' for Q65 and '+' for FT4.
         /// The message id tells the sources apart.
+        /// </para>
         /// </remarks>
         /// <returns></returns>
         public string DecodeModeNotationsToString()
@@ -85,10 +99,16 @@ namespace WsjtxUtilsPatch.WsjtxMessages.Messages
                 "+" => IsJtdxSource ? "T10" : "FT4",
                 "~" => "FT8",
                 "$" => "JT4",
+                "$*" => "JT4",
+                "$#" => "JT4",
                 "@" => "JT9",
                 "#" => "JT65",
+                "#*" => "JT65",
+                "##" => "JT65",
                 ":" => IsJtdxSource ? "FT4" : "Q65",
                 "&" => "MSK144",
+                "^" => "MSK144",
+                "*" => "FT2",
                 _ => string.Empty
             };
         }

@@ -18,16 +18,20 @@ namespace WsjtxUtilsPatch.WsjtxMessages.QsoParsing
             var mode = decode.DecodeModeNotationsToString();
             switch (mode)
             {
+                // 77-bit payloads (FT2 uses the FT4 message format)
                 case "FST4":
+                case "FT2":
                 case "FT4":
                 case "FT8":
                 case "MSK144":
                 case "Q65":
                     return new WsjtxQsoParser77BitModes(decode).Parse();
+                // 72-bit payloads
                 case "JT4":
                 case "JT9":
                 case "JT65":
-                    //TODO: 72-bit message payloads: JT4, JT9, and JT65
+                case "T10":
+                    return new WsjtxQsoParser72BitModes(decode).Parse();
                 default:
                     throw new NotImplementedException($"A QSO parser for {mode} is not implemented");
             }

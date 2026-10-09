@@ -1,4 +1,5 @@
-﻿using System.Text.RegularExpressions;
+﻿using System;
+using System.Text.RegularExpressions;
 using WsjtxUtilsPatch.WsjtxMessages.Messages;
 
 namespace WsjtxUtilsPatch.WsjtxMessages.QsoParsing
@@ -53,9 +54,14 @@ namespace WsjtxUtilsPatch.WsjtxMessages.QsoParsing
             RegexOptions.Compiled);
 
         /// <summary>
-        /// Regular expression to match the use of priori
+        /// Regular expression to match the use of priori (AP decode flags, e.g. "a3" and "a23")
         /// </summary>
-        protected static Regex PrioriRegex = new Regex(@"^(a[1-7])$", RegexOptions.Compiled);
+        protected static Regex PrioriRegex = new Regex(@"^a\d{1,2}$", RegexOptions.Compiled);
+
+        /// <summary>
+        /// Regular expression to match decoder annotation flags appended after the message text
+        /// </summary>
+        private static readonly Regex DecoderFlagRegex = new Regex(@"^[a-z][0-9a-z*]{0,2}$", RegexOptions.Compiled);
 
         /// <summary>
         /// Parse a <see cref="Decode"/> message into a <see cref="WsjtxQso"/>
@@ -139,6 +145,32 @@ namespace WsjtxUtilsPatch.WsjtxMessages.QsoParsing
         #endregion
 
         #region static methods
+        /// <summary>
+        /// Strip trailing decoder annotation flags from the message parts
+        /// </summary>
+        /// <remarks>
+        /// Decoded messages carry small flags after the message text: AP flags "a1".."a9" and
+        /// "a&lt;nap&gt;&lt;nsum&gt;" like "a23" (FT8, FT4, FT2, JT65), JT4/JT65 sync quality flags
+        /// like "f", "d9", "d23" and Q65 flags like "q1". Message payloads only contain
+        /// characters from 0-9A-Z +-./?, so a trailing lowercase token is always a flag,
+        /// never message content. JTDX does not include the flags in the UDP message.
+        /// </remarks>
+        /// <param name="parts"></param>
+        /// <param name="usedPriori">true when an "a" AP flag was stripped</param>
+        /// <returns></returns>
+        protected static string[] StripTrailingDecoderFlags(string[] parts, out bool usedPriori)
+        {
+            usedPriori = false;
+            while (parts.Length > 0 && DecoderFlagRegex.IsMatch(parts[parts.Length - 1]))
+            {
+                if (PrioriRegex.IsMatch(parts[parts.Length - 1]))
+                    usedPriori = true;
+
+                Array.Resize(ref parts, parts.Length - 1);
+            }
+            return parts;
+        }
+
         /// <summary>
         /// Try to get the matching value in the regex
         /// </summary>
