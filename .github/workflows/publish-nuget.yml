@@ -1,0 +1,95 @@
+name: publish-nuget
+
+# Publishes both packages to NuGet.org whenever a version tag is pushed.
+# The tag name (with an optional leading "v" stripped) becomes the package
+# version, overriding the <Version> placeholder in the csproj files, so the
+# tag is the single source of truth for a release. Non-version tags fail at
+# the validation step and publish nothing.
+#
+# Both packages are unlisted right after the push: they stay invisible to
+# NuGet search/browse but remain restorable by an explicit PackageReference
+# with package ID and version. The NUGET_API_KEY secret therefore needs
+# both the Push and the Unlist scope.
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Resolve package version from tag
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::Tag '$TAG' is not a version tag (expected v1.2.3 or 1.2.3, optionally with a -prerelease suffix); refusing to publish."
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Pack
+        run: |
+          dotnet pack WsjtxUtilsPatch.WsjtxMessages/WsjtxUtilsPatch.WsjtxMessages.csproj -c Release -p:Version="$VERSION"
+          dotnet pack WsjtxUtilsPatch.WsjtxUdpServer/WsjtxUtilsPatch.WsjtxUdpServer.csproj -c Release -p:Version="$VERSION"
+
+      - name: Push to NuGet.org
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          dotnet nuget push WsjtxUtilsPatch.WsjtxMessages/bin/Release/*.nupkg \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key "$NUGET_API_KEY" \
+            --skip-duplicate
+          dotnet nuget push WsjtxUtilsPatch.WsjtxUdpServer/bin/Release/*.nupkg \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key "$NUGET_API_KEY" \
+            --skip-duplicate
+
+      - name: Unlist packages
+        # Unlisted packages are hidden from search/browse but stay restorable
+        # via an explicit PackageReference ID + version.
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          unlist() {
+            local id="$1" version="$2" code=""
+            for attempt in 1 2 3 4 5; do
+              code=$(curl -sS -o /dev/null -w "%{http_code}" \
+                -X DELETE \
+                -H "X-NuGet-ApiKey: ${NUGET_API_KEY}" \
+                "https://www.nuget.org/api/v2/package/${id}/${version}" || true)
+              case "$code" in
+                200|204)
+                  echo "Unlisted ${id} ${version}"
+                  return 0 ;;
+                401|403)
+                  echo "::error::HTTP ${code} unlisting ${id} ${version} - the NUGET_API_KEY secret is missing the Unlist scope."
+                  return 1 ;;
+              esac
+              # 404 = version not visible yet (or already unlisted); 5xx = transient
+              echo "Unlist attempt ${attempt} for ${id} ${version} returned HTTP ${code:-000}; retrying in 30s..."
+              sleep 30
+            done
+            if [[ "$code" == "404" ]]; then
+              echo "::warning::${id} ${version} still returns 404 after 5 attempts - treating it as already unlisted."
+              return 0
+            fi
+            echo "::error::Could not unlist ${id} ${version} (last HTTP status ${code:-none})."
+            return 1
+          }
+          unlist WsjtxUtilsPatch.WsjtxMessages "$VERSION"
+          unlist WsjtxUtilsPatch.WsjtxUdpServer "$VERSION"
